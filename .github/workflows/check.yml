@@ -1,0 +1,74 @@
+name: Check for new videos
+
+# Every 30 minutes, off the top of the hour where GitHub's scheduler is most backed up.
+# Fireship posts two or three times a week, so this is about the task landing the same hour the
+# video does, not about load.
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      check_token:
+        description: Only confirm the Todoist token works, create nothing
+        type: boolean
+        default: false
+      dry_run:
+        description: Print the tasks instead of creating them
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: check-videos
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test
+        run: npm test
+
+      - name: Check the Todoist token
+        if: inputs.check_token
+        env:
+          TODOIST_TOKEN: ${{ secrets.TODOIST_TOKEN }}
+        run: node scripts/todoist.mjs --check
+
+      - name: Look for new uploads
+        id: look
+        if: ${{ !inputs.check_token }}
+        run: node scripts/check.mjs
+
+      # Runs even when one channel failed to load, so the channels that did load still get tasks.
+      # Each video is written to state/seen.json only after its task exists.
+      - name: Create Todoist tasks
+        if: ${{ !cancelled() && steps.look.outcome != 'skipped' }}
+        env:
+          TODOIST_TOKEN: ${{ secrets.TODOIST_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: node scripts/todoist.mjs
+
+      - name: Remember what was handled
+        if: ${{ !cancelled() && steps.look.outcome != 'skipped' && !inputs.dry_run }}
+        run: |
+          if git diff --quiet state/seen.json; then
+            echo "no change"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/seen.json
+          git commit -m "Update seen videos"
+          git pull --rebase --quiet
+          git push

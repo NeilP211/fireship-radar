@@ -1,0 +1,12 @@
+{
+  "name": "fireship-radar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Watches YouTube channels and drops a Todoist task the moment a new video goes up",
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "todoist": "node scripts/todoist.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}
